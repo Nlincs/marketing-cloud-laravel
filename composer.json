@@ -1,0 +1,20 @@
+{
+    "name": "nlincs/marketing-cloud-laravel",
+    "description": "Salesforce Marketing Cloud integration for Laravel applications.",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Nlincs\\MarketingCloudLaravel\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Luke Prendergast",
+            "email": "lukep11a@hotmail.com"
+        }
+    ],
+    "require": {
+        "php": "^8.1"
+    }
+}
