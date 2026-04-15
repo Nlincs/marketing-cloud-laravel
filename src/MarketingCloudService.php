@@ -1,9 +1,10 @@
 <?php
 
-namespace YourVendor\MarketingCloud;
+namespace Nlincs\MarketingCloudLaravel;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Nlincs\MarketingCloudLaravel\Subscriber;
 use RuntimeException;
 
 class MarketingCloudService
@@ -50,7 +51,8 @@ class MarketingCloudService
         return $response->json('access_token');
     }
 
-    public function upsertDataExtension(string $dataExtension, string $subscriberKey, array $attributes): void {
+    public function upsertDataExtension(string $dataExtension, Subscriber $subscriber): void
+    {
         $definition = config("marketingcloud.data_extensions.{$dataExtension}");
 
         if (! $definition) {
@@ -60,7 +62,7 @@ class MarketingCloudService
         $token = $this->getAccessToken();
 
         $keys = [
-            $definition['primary_key'] => $subscriberKey,
+            $definition['primary_key'] => $subscriber->subscriberKey(),
         ];
 
         Http::withHeaders([
@@ -69,22 +71,31 @@ class MarketingCloudService
             "https://{$this->orgId}.rest.marketingcloudapis.com/hub/v1/dataevents/key:{$definition['key']}/rowset",
             [[
                 'keys' => $keys,
-                'values' => array_merge($attributes, $keys),
+                'values' => array_merge(
+                    $subscriber->attributes(),
+                    $keys
+                ),
             ]]
         )->throw();
     }
 
-    public function subscribe(string $email, string $subscriberKey): void
+    public function subscribe(Subscriber $subscriber): void
     {
-        $this->updateSubscriptionStatus($email, $subscriberKey, 'Active');
+        $this->updateSubscriptionStatus($subscriber, 'Active');
     }
 
-    public function unsubscribe(string $email, string $subscriberKey): void
+    public function unsubscribe(Subscriber $subscriber): void
     {
-        $this->updateSubscriptionStatus($email, $subscriberKey, 'Unsubscribed');
+        $this->updateSubscriptionStatus($subscriber, 'Unsubscribed');
     }
 
-    protected function updateSubscriptionStatus(string $email, string $subscriberKey, string $status): void {
+    protected function updateSubscriptionStatus(Subscriber $subscriber, string $status): void {
+        $email = $subscriber->email();
+
+        if (! $email) {
+            throw new RuntimeException('Email address required for subscription status updates');
+        }
+
         $token = $this->getAccessToken();
 
         $envelope = <<<XML
@@ -95,7 +106,7 @@ class MarketingCloudService
               <soap:Body>
                 <UpdateRequest xmlns="http://exacttarget.com/wsdl/partnerAPI">
                   <Objects xsi:type="Subscriber" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-                    <SubscriberKey>{$subscriberKey}</SubscriberKey>
+                    <SubscriberKey>{$subscriber->subscriberKey()}</SubscriberKey>
                     <EmailAddress>{$email}</EmailAddress>
                     <Lists>
                       <ID>{$this->listId}</ID>
@@ -110,7 +121,8 @@ class MarketingCloudService
         Http::withHeaders([
             'Content-Type' => 'text/xml; charset=utf-8',
             'SOAPAction'   => 'Update',
-        ])->withBody($envelope, 'text/xml')
+        ])
+            ->withBody($envelope, 'text/xml')
             ->post("https://{$this->orgId}.soap.marketingcloudapis.com/Service.asmx")
             ->throw();
     }

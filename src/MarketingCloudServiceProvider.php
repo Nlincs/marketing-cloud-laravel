@@ -1,6 +1,6 @@
 <?php
 
-namespace YourVendor\MarketingCloud;
+namespace Nlincs\MarketingCloudLaravel;
 
 use Illuminate\Support\ServiceProvider;
 
