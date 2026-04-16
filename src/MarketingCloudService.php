@@ -87,13 +87,21 @@ class MarketingCloudService
         $token = $this->getAccessToken();
 
         $envelope = <<<XML
-            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
               <soap:Header>
                 <fueloauth xmlns="http://exacttarget.com">{$token}</fueloauth>
               </soap:Header>
               <soap:Body>
                 <UpdateRequest xmlns="http://exacttarget.com/wsdl/partnerAPI">
-                  <Objects xsi:type="Subscriber" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                 <Options>
+                    <SaveOptions>
+                       <SaveOption>
+                          <PropertyName>*</PropertyName>
+                          <SaveAction>UpdateAdd</SaveAction>
+                       </SaveOption>
+                    </SaveOptions>
+                 </Options>
+                  <Objects xsi:type="Subscriber">
                     <SubscriberKey>{$subscriber->subscriberKey()}</SubscriberKey>
                     <EmailAddress>{$email}</EmailAddress>
                     <Lists>
