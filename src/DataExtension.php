@@ -3,6 +3,7 @@
 namespace Nlincs\MarketingCloudLaravel;
 
 use Illuminate\Support\Facades\Http;
+use Nlincs\MarketingCloudLaravel\Testing\MarketingCloudFake;
 use RuntimeException;
 
 class DataExtension
@@ -14,6 +15,11 @@ class DataExtension
 
     public function upsert(Subscriber $subscriber): void
     {
+        if (MarketingCloudFake::isActive()) {
+            MarketingCloudFake::recordUpsert($this->name, $subscriber);
+            return;
+        }
+
         $keys = [
             $this->definition['primary_key'] => $subscriber->subscriberKey(),
         ];

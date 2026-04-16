@@ -5,6 +5,7 @@ namespace Nlincs\MarketingCloudLaravel;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Nlincs\MarketingCloudLaravel\Testing\MarketingCloudFake;
 use RuntimeException;
 
 class MarketingCloudService
@@ -53,11 +54,21 @@ class MarketingCloudService
 
     public function subscribe(Subscriber $subscriber): void
     {
+        if (MarketingCloudFake::isActive()) {
+            MarketingCloudFake::recordSubscribe($subscriber);
+            return;
+        }
+
         $this->updateSubscriptionStatus($subscriber, 'Active');
     }
 
     public function unsubscribe(Subscriber $subscriber): void
     {
+        if (MarketingCloudFake::isActive()) {
+            MarketingCloudFake::recordUnsubscribe($subscriber);
+            return;
+        }
+
         $this->updateSubscriptionStatus($subscriber, 'Unsubscribed');
     }
 
