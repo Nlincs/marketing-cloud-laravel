@@ -23,6 +23,11 @@ class MarketingCloudService
         $this->listId       = config('marketingcloud.list_id');
     }
 
+    public function orgId(): string
+    {
+        return $this->orgId;
+    }
+
     protected function getAccessToken(): string
     {
         $cacheKey = 'marketing_cloud:token:' . $this->clientId;
