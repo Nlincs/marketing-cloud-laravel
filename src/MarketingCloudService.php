@@ -2,9 +2,9 @@
 
 namespace Nlincs\MarketingCloudLaravel;
 
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
-use Nlincs\MarketingCloudLaravel\Subscriber;
 use RuntimeException;
 
 class MarketingCloudService
@@ -49,34 +49,6 @@ class MarketingCloudService
         }
 
         return $response->json('access_token');
-    }
-
-    public function upsertDataExtension(string $dataExtension, Subscriber $subscriber): void
-    {
-        $definition = config("marketingcloud.data_extensions.{$dataExtension}");
-
-        if (! $definition) {
-            throw new RuntimeException("Unknown Data Extension [$dataExtension]");
-        }
-
-        $token = $this->getAccessToken();
-
-        $keys = [
-            $definition['primary_key'] => $subscriber->subscriberKey(),
-        ];
-
-        Http::withHeaders([
-            'Authorization' => "Bearer {$token}",
-        ])->post(
-            "https://{$this->orgId}.rest.marketingcloudapis.com/hub/v1/dataevents/key:{$definition['key']}/rowset",
-            [[
-                'keys' => $keys,
-                'values' => array_merge(
-                    $subscriber->attributes(),
-                    $keys
-                ),
-            ]]
-        )->throw();
     }
 
     public function subscribe(Subscriber $subscriber): void
@@ -125,5 +97,40 @@ class MarketingCloudService
             ->withBody($envelope, 'text/xml')
             ->post("https://{$this->orgId}.soap.marketingcloudapis.com/Service.asmx")
             ->throw();
+    }
+
+    public function dataExtension(string $name): DataExtension
+    {
+        $definition = config("marketingcloud.data_extensions.{$name}");
+
+        if (! $definition) {
+            throw new RuntimeException("Unknown Data Extension [{$name}]");
+        }
+
+        return new DataExtension(
+            service: $this,
+            name: $name,
+            definition: $definition
+        );
+    }
+
+    public function restRequest(callable $callback): Response
+    {
+        $token = $this->getAccessToken();
+
+        $response = $callback($token);
+
+        if ($response->status() === 401) {
+            $this->forgetAccessToken();
+            $token = $this->getAccessToken();
+            $response = $callback($token);
+        }
+
+        return $response->throw();
+    }
+
+    protected function forgetAccessToken(): void
+    {
+        cache()->forget('marketing_cloud:token:' . $this->clientId);
     }
 }

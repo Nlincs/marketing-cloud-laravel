@@ -4,10 +4,10 @@ namespace Nlincs\MarketingCloudLaravel;
 
 class Subscriber
 {
-    public function __construct(
-        protected string $subscriberKey,
-        protected array $attributes = []
-    ) {}
+    public function __construct(protected string $subscriberKey, protected array $attributes = [])
+    {
+        //
+    }
 
     public static function fromEmail(string $email): self
     {
