@@ -78,7 +78,7 @@ class MarketingCloudService
     }
 
     protected function updateSubscriptionStatus(Subscriber $subscriber, string $status): void {
-        $email = $subscriber->email();
+        $email = $subscriber->email() ?? $subscriber->subscriberKey();
 
         if (! $email) {
             throw new RuntimeException('Email address required for subscription status updates');
