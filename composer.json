@@ -8,6 +8,11 @@
             "Nlincs\\MarketingCloudLaravel\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "Nlincs\\MarketingCloudLaravel\\Tests\\": "tests/"
+        }
+    },
     "authors": [
         {
             "name": "Luke Prendergast",
@@ -19,7 +24,11 @@
     },
     "require-dev": {
         "laravel/framework": "^11.0 || ^12.0 || ^13.0",
-        "phpunit/phpunit": "^11.0"
+        "phpunit/phpunit": "^11.0 || ^12.0",
+        "orchestra/testbench": "^9.0 || ^10.0 || ^11.0"
+    },
+    "scripts": {
+        "test": "phpunit"
     },
     "extra": {
         "laravel": {

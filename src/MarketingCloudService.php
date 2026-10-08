@@ -30,16 +30,24 @@ class MarketingCloudService
 
     protected function getAccessToken(): string
     {
-        $cacheKey = 'marketing_cloud:token:' . $this->clientId;
+        $cacheKey = $this->tokenCacheKey();
 
-        return Cache::remember(
-            $cacheKey,
-            now()->addSeconds(3500),
-            fn () => $this->requestAccessToken()
-        );
+        if ($token = Cache::get($cacheKey)) {
+            return $token;
+        }
+
+        $response = $this->requestAccessToken();
+
+        // Tokens last 20 minutes; refresh a minute early so a cached token
+        // never expires mid-request.
+        $ttl = max((int) $response['expires_in'] - 60, 60);
+
+        Cache::put($cacheKey, $response['access_token'], now()->addSeconds($ttl));
+
+        return $response['access_token'];
     }
 
-    protected function requestAccessToken(): string
+    protected function requestAccessToken(): array
     {
         $response = Http::post(
             "https://{$this->orgId}.auth.marketingcloudapis.com/v2/token",
@@ -50,11 +58,16 @@ class MarketingCloudService
             ]
         );
 
-        if (! $response->successful()) {
-            throw new RuntimeException('Failed to obtain Marketing Cloud token');
+        if (! $response->successful() || ! $response->json('access_token')) {
+            throw new RuntimeException(
+                "Failed to obtain Marketing Cloud token (HTTP {$response->status()}): {$response->body()}"
+            );
         }
 
-        return $response->json('access_token');
+        return [
+            'access_token' => $response->json('access_token'),
+            'expires_in'   => $response->json('expires_in', 1200),
+        ];
     }
 
     public function subscribe(Subscriber $subscriber): void
@@ -84,9 +97,7 @@ class MarketingCloudService
             throw new RuntimeException('Email address required for subscription status updates');
         }
 
-        $token = $this->getAccessToken();
-
-        $envelope = <<<XML
+        $this->soapRequest('Update', fn (string $token) => <<<XML
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
               <soap:Header>
                 <fueloauth xmlns="http://exacttarget.com">{$token}</fueloauth>
@@ -112,15 +123,7 @@ class MarketingCloudService
                 </UpdateRequest>
               </soap:Body>
             </soap:Envelope>
-        XML;
-
-        Http::withHeaders([
-            'Content-Type' => 'text/xml; charset=utf-8',
-            'SOAPAction'   => 'Update',
-        ])
-            ->withBody($envelope, 'text/xml')
-            ->post("https://{$this->orgId}.soap.marketingcloudapis.com/Service.asmx")
-            ->throw();
+        XML);
     }
 
     public function dataExtension(string $name): DataExtension
@@ -153,8 +156,33 @@ class MarketingCloudService
         return $response->throw();
     }
 
+    protected function soapRequest(string $action, callable $envelope): Response
+    {
+        $send = fn (string $token) => Http::withHeaders([
+            'Content-Type' => 'text/xml; charset=utf-8',
+            'SOAPAction'   => $action,
+        ])
+            ->withBody($envelope($token), 'text/xml')
+            ->post("https://{$this->orgId}.soap.marketingcloudapis.com/Service.asmx");
+
+        $response = $send($this->getAccessToken());
+
+        // An expired or revoked token comes back as a 500 "Login Failed" fault.
+        if ($response->failed()) {
+            $this->forgetAccessToken();
+            $response = $send($this->getAccessToken());
+        }
+
+        return $response->throw();
+    }
+
+    protected function tokenCacheKey(): string
+    {
+        return 'marketing_cloud:token:' . $this->clientId;
+    }
+
     protected function forgetAccessToken(): void
     {
-        cache()->forget('marketing_cloud:token:' . $this->clientId);
+        Cache::forget($this->tokenCacheKey());
     }
 }
