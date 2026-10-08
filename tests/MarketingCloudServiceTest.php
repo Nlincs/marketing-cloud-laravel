@@ -181,4 +181,89 @@ class MarketingCloudServiceTest extends TestCase
 
         $this->service()->dataExtension('missing');
     }
+
+    public function test_soap_error_returned_with_http_200_throws(): void
+    {
+        Http::fake([
+            '*/v2/token' => $this->tokenResponse(),
+            '*/Service.asmx' => Http::response(
+                '<UpdateResponse><Results><StatusCode>Error</StatusCode></Results>'
+                .'<OverallStatus>Error</OverallStatus><StatusMessage>List &amp; ID invalid</StatusMessage></UpdateResponse>'
+            ),
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Marketing Cloud SOAP Update failed (Error): List & ID invalid');
+
+        $this->service()->subscribe(Subscriber::fromEmail('test@example.com'));
+    }
+
+    public function test_soap_ok_status_does_not_throw(): void
+    {
+        Http::fake([
+            '*/v2/token' => $this->tokenResponse(),
+            '*/Service.asmx' => Http::response('<UpdateResponse><OverallStatus>OK</OverallStatus></UpdateResponse>'),
+        ]);
+
+        $this->service()->subscribe(Subscriber::fromEmail('test@example.com'));
+
+        Http::assertSentCount(2);
+    }
+
+    public function test_soap_values_are_xml_escaped(): void
+    {
+        Http::fake([
+            '*/v2/token' => $this->tokenResponse(),
+            '*/Service.asmx' => Http::response('<ok/>'),
+        ]);
+
+        $this->service()->subscribe(Subscriber::fromKey('a<b>', ['Email address' => "o'brien&co@example.com"]));
+
+        Http::assertSent(function ($request) {
+            if (! str_ends_with($request->url(), '/Service.asmx')) {
+                return false;
+            }
+
+            return simplexml_load_string($request->body()) !== false
+                && str_contains($request->body(), '<SubscriberKey>a&lt;b&gt;</SubscriberKey>')
+                && str_contains($request->body(), '<EmailAddress>o&apos;brien&amp;co@example.com</EmailAddress>');
+        });
+    }
+
+    public function test_missing_config_throws_a_clear_error(): void
+    {
+        config(['marketingcloud.client_secret' => null]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Marketing Cloud config [marketingcloud.client_secret] is not set.');
+
+        $this->service()->subscribe(Subscriber::fromEmail('test@example.com'));
+    }
+
+    public function test_missing_list_id_only_matters_for_subscriptions(): void
+    {
+        config(['marketingcloud.list_id' => null]);
+
+        Http::fake([
+            '*/v2/token' => $this->tokenResponse(),
+            '*/rowset' => Http::response([]),
+        ]);
+
+        $this->service()->dataExtension('newsletter')->upsert(Subscriber::fromKey('key-1'));
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('[marketingcloud.list_id]');
+
+        $this->service()->subscribe(Subscriber::fromEmail('test@example.com'));
+    }
+
+    public function test_data_extension_without_key_throws(): void
+    {
+        config(['marketingcloud.data_extensions.newsletter.key' => null]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('[marketingcloud.data_extensions.newsletter] needs a key');
+
+        $this->service()->dataExtension('newsletter')->upsert(Subscriber::fromKey('key-1'));
+    }
 }

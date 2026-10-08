@@ -2,10 +2,10 @@
 
 A lightweight Laravel package for interacting with Salesforce Marketing Cloud.
 
-- Handles authentication and token refresh internally
+- Handles authentication, token caching and refresh internally
 - Supports Data Extension upserts
 - Supports subscribe / unsubscribe
-- Works with email-only subscribers or models
+- Works with email-only subscribers or your own subscriber keys
 
 ## Installation
 
@@ -20,11 +20,16 @@ php artisan vendor:publish --tag=marketingcloud-config
 
 Configure .env:
 ```bash
+# Tenant subdomain, e.g. mc0sh2543... from https://mc0sh2543....auth.marketingcloudapis.com
 MC_ORG_ID=
 MC_CLIENT_ID=
 MC_CLIENT_SECRET=
+# Only needed for subscribe / unsubscribe
 MC_LIST_ID=
 ```
+
+`MC_ORG_ID` is your tenant-specific subdomain (shown on the API Integration
+component of your Installed Package), not the account MID.
 
 ## Configuration
 
@@ -72,6 +77,39 @@ $mc->dataExtension('newsletter')->upsert($subscriber);
 $mc->subscribe($subscriber);
 ```
 
+## Custom Subscriber Keys
+
+If your Data Extension or subscriber list uses something other than the email
+address as the key, build the subscriber with `fromKey()`. Include the
+`Email address` attribute when subscribing so Marketing Cloud knows where to
+send:
+
+```php
+$subscriber = Subscriber::fromKey($user->subscriber_key, [
+    'Email address' => $user->email,
+    'Name' => $user->name,
+]);
+```
+
+Attributes are sent as Data Extension column values, so their names must
+match your Data Extension's columns.
+
+## Error Handling
+
+Failures throw rather than failing silently:
+
+- A missing config value throws a `RuntimeException` naming the key.
+- Authentication failures throw a `RuntimeException` including the HTTP status
+  and response body.
+- Expired tokens are refreshed and the request retried once automatically.
+- HTTP errors throw `Illuminate\Http\Client\RequestException`.
+- SOAP requests that return HTTP 200 with a non-`OK` status throw a
+  `RuntimeException` with Marketing Cloud's status message.
+
+When calling Marketing Cloud from a request (e.g. a sign-up form), catch these
+so the user sees a friendly error. From a queued job, let them throw so the
+job is retried or recorded in `failed_jobs`.
+
 ## Data Extensions vs Subscriptions
 
 - **Data Extensions** are used to store subscriber data (REST API).
@@ -91,6 +129,7 @@ use Nlincs\MarketingCloudLaravel\Subscriber;
 MarketingCloudFake::activate();
 
 $subscriber = Subscriber::fromEmail('test@example.com');
+$mc = app(MarketingCloudService::class);
 
 $mc->dataExtension('newsletter')->upsert($subscriber);
 $mc->subscribe($subscriber);
@@ -98,4 +137,19 @@ $mc->subscribe($subscriber);
 // Assertions
 MarketingCloudFake::assertUpserted('newsletter', $subscriber);
 MarketingCloudFake::assertSubscribed($subscriber);
+MarketingCloudFake::assertUnsubscribed($subscriber);
+MarketingCloudFake::assertNothingSent();
+```
+
+The fake's state is stored in the container, so it resets automatically for
+each test. Call `MarketingCloudFake::deactivate()` to turn it off mid-test.
+
+## Development
+
+The package is tested with Orchestra Testbench, so no host Laravel app is
+needed:
+
+```bash
+composer install
+composer test
 ```

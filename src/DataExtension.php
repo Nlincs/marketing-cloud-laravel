@@ -20,6 +20,10 @@ class DataExtension
             return;
         }
 
+        if (blank($this->definition['key'] ?? null) || blank($this->definition['primary_key'] ?? null)) {
+            throw new RuntimeException("Marketing Cloud config [marketingcloud.data_extensions.{$this->name}] needs a key and primary_key.");
+        }
+
         $keys = [
             $this->definition['primary_key'] => $subscriber->subscriberKey(),
         ];

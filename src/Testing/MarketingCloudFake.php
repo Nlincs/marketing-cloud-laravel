@@ -3,32 +3,43 @@
 namespace Nlincs\MarketingCloudLaravel\Testing;
 
 use Nlincs\MarketingCloudLaravel\Subscriber;
-use RuntimeException;
+use PHPUnit\Framework\Assert;
 
+/**
+ * Records Marketing Cloud calls instead of sending them.
+ *
+ * State lives in the container, so it resets automatically with each test's
+ * fresh application instead of leaking into later tests.
+ */
 class MarketingCloudFake
 {
-    protected static bool $active = false;
-
-    protected static array $upserts = [];
-    protected static array $subscriptions = [];
-    protected static array $unsubscriptions = [];
+    protected array $upserts = [];
+    protected array $subscriptions = [];
+    protected array $unsubscriptions = [];
 
     public static function activate(): void
     {
-        static::$active = true;
-        static::$upserts = [];
-        static::$subscriptions = [];
-        static::$unsubscriptions = [];
+        app()->instance(static::class, new static);
+    }
+
+    public static function deactivate(): void
+    {
+        app()->forgetInstance(static::class);
     }
 
     public static function isActive(): bool
     {
-        return static::$active;
+        return app()->bound(static::class);
+    }
+
+    protected static function instance(): static
+    {
+        return app(static::class);
     }
 
     public static function recordUpsert(string $dataExtension, Subscriber $subscriber): void
     {
-        static::$upserts[] = [
+        static::instance()->upserts[] = [
             'data_extension' => $dataExtension,
             'subscriber' => $subscriber,
         ];
@@ -36,47 +47,54 @@ class MarketingCloudFake
 
     public static function recordSubscribe(Subscriber $subscriber): void
     {
-        static::$subscriptions[] = $subscriber;
+        static::instance()->subscriptions[] = $subscriber;
     }
 
     public static function recordUnsubscribe(Subscriber $subscriber): void
     {
-        static::$unsubscriptions[] = $subscriber;
+        static::instance()->unsubscriptions[] = $subscriber;
     }
 
     public static function assertUpserted(string $dataExtension, Subscriber $subscriber): void
     {
-        foreach (static::$upserts as $upsert) {
-            if (
-                $upsert['data_extension'] === $dataExtension &&
-                $upsert['subscriber']->subscriberKey() === $subscriber->subscriberKey()
-            ) {
-                return;
-            }
-        }
+        $found = collect(static::instance()->upserts)->contains(
+            fn ($upsert) => $upsert['data_extension'] === $dataExtension
+                && $upsert['subscriber']->subscriberKey() === $subscriber->subscriberKey()
+        );
 
-        throw new RuntimeException("Subscriber was not upserted into data extension [{$dataExtension}].");
+        Assert::assertTrue($found, "Subscriber was not upserted into data extension [{$dataExtension}].");
     }
 
     public static function assertSubscribed(Subscriber $subscriber): void
     {
-        foreach (static::$subscriptions as $s) {
-            if ($s->subscriberKey() === $subscriber->subscriberKey()) {
-                return;
-            }
-        }
-
-        throw new RuntimeException('Subscriber was not subscribed.');
+        Assert::assertTrue(
+            static::contains(static::instance()->subscriptions, $subscriber),
+            'Subscriber was not subscribed.'
+        );
     }
 
     public static function assertUnsubscribed(Subscriber $subscriber): void
     {
-        foreach (static::$unsubscriptions as $s) {
-            if ($s->subscriberKey() === $subscriber->subscriberKey()) {
-                return;
-            }
-        }
+        Assert::assertTrue(
+            static::contains(static::instance()->unsubscriptions, $subscriber),
+            'Subscriber was not unsubscribed.'
+        );
+    }
 
-        throw new RuntimeException('Subscriber was not unsubscribed.');
+    public static function assertNothingSent(): void
+    {
+        $fake = static::instance();
+
+        Assert::assertEmpty(
+            [...$fake->upserts, ...$fake->subscriptions, ...$fake->unsubscriptions],
+            'Unexpected Marketing Cloud calls were recorded.'
+        );
+    }
+
+    protected static function contains(array $subscribers, Subscriber $subscriber): bool
+    {
+        return collect($subscribers)->contains(
+            fn ($s) => $s->subscriberKey() === $subscriber->subscriberKey()
+        );
     }
 }

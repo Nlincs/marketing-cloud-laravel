@@ -10,10 +10,10 @@ use RuntimeException;
 
 class MarketingCloudService
 {
-    protected string $orgId;
-    protected string $clientId;
-    protected string $clientSecret;
-    protected string $listId;
+    protected ?string $orgId;
+    protected ?string $clientId;
+    protected ?string $clientSecret;
+    protected ?string $listId;
 
     public function __construct()
     {
@@ -25,7 +25,16 @@ class MarketingCloudService
 
     public function orgId(): string
     {
-        return $this->orgId;
+        return $this->required('org_id', $this->orgId);
+    }
+
+    protected function required(string $key, ?string $value): string
+    {
+        if (blank($value)) {
+            throw new RuntimeException("Marketing Cloud config [marketingcloud.{$key}] is not set.");
+        }
+
+        return $value;
     }
 
     protected function getAccessToken(): string
@@ -50,11 +59,11 @@ class MarketingCloudService
     protected function requestAccessToken(): array
     {
         $response = Http::post(
-            "https://{$this->orgId}.auth.marketingcloudapis.com/v2/token",
+            "https://{$this->orgId()}.auth.marketingcloudapis.com/v2/token",
             [
                 'grant_type'    => 'client_credentials',
-                'client_id'     => $this->clientId,
-                'client_secret' => $this->clientSecret,
+                'client_id'     => $this->required('client_id', $this->clientId),
+                'client_secret' => $this->required('client_secret', $this->clientSecret),
             ]
         );
 
@@ -97,6 +106,10 @@ class MarketingCloudService
             throw new RuntimeException('Email address required for subscription status updates');
         }
 
+        $listId = $this->required('list_id', $this->listId);
+        $subscriberKey = $this->xml($subscriber->subscriberKey());
+        $email = $this->xml($email);
+
         $this->soapRequest('Update', fn (string $token) => <<<XML
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
               <soap:Header>
@@ -113,10 +126,10 @@ class MarketingCloudService
                     </SaveOptions>
                  </Options>
                   <Objects xsi:type="Subscriber">
-                    <SubscriberKey>{$subscriber->subscriberKey()}</SubscriberKey>
+                    <SubscriberKey>{$subscriberKey}</SubscriberKey>
                     <EmailAddress>{$email}</EmailAddress>
                     <Lists>
-                      <ID>{$this->listId}</ID>
+                      <ID>{$this->xml($listId)}</ID>
                       <Status>{$status}</Status>
                     </Lists>
                   </Objects>
@@ -163,7 +176,7 @@ class MarketingCloudService
             'SOAPAction'   => $action,
         ])
             ->withBody($envelope($token), 'text/xml')
-            ->post("https://{$this->orgId}.soap.marketingcloudapis.com/Service.asmx");
+            ->post("https://{$this->orgId()}.soap.marketingcloudapis.com/Service.asmx");
 
         $response = $send($this->getAccessToken());
 
@@ -173,12 +186,37 @@ class MarketingCloudService
             $response = $send($this->getAccessToken());
         }
 
-        return $response->throw();
+        $response->throw();
+
+        // Request-level errors (e.g. an invalid list ID) still come back as HTTP 200.
+        $status = $this->soapValue($response->body(), 'OverallStatus');
+
+        if ($status !== null && $status !== 'OK') {
+            $message = $this->soapValue($response->body(), 'StatusMessage') ?? 'no status message';
+
+            throw new RuntimeException("Marketing Cloud SOAP {$action} failed ({$status}): {$message}");
+        }
+
+        return $response;
+    }
+
+    protected function soapValue(string $body, string $element): ?string
+    {
+        if (! preg_match("/<{$element}>(.*?)<\/{$element}>/s", $body, $matches)) {
+            return null;
+        }
+
+        return html_entity_decode($matches[1], ENT_QUOTES | ENT_XML1);
+    }
+
+    protected function xml(string $value): string
+    {
+        return htmlspecialchars($value, ENT_QUOTES | ENT_XML1, 'UTF-8');
     }
 
     protected function tokenCacheKey(): string
     {
-        return 'marketing_cloud:token:' . $this->clientId;
+        return 'marketing_cloud:token:' . $this->required('client_id', $this->clientId);
     }
 
     protected function forgetAccessToken(): void
