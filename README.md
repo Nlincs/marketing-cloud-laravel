@@ -104,11 +104,30 @@ Failures throw rather than failing silently:
 - Expired tokens are refreshed and the request retried once automatically.
 - HTTP errors throw `Illuminate\Http\Client\RequestException`.
 - SOAP requests that return HTTP 200 with a non-`OK` status throw a
-  `RuntimeException` with Marketing Cloud's status message.
+  `MarketingCloudRejectedException` (a `RuntimeException`) with Marketing
+  Cloud's status message, e.g. `TriggeredSpamFilter` for a fake address like
+  `test@test.com`.
 
 When calling Marketing Cloud from a request (e.g. a sign-up form), catch these
 so the user sees a friendly error. From a queued job, let them throw so the
-job is retried or recorded in `failed_jobs`.
+job is retried or recorded in `failed_jobs`, but fail the job straight away on
+a `MarketingCloudRejectedException`, since retrying the same data will be
+rejected again. Always set `$tries` on the job too:
+
+```php
+public $tries = 3;
+
+public $backoff = [60, 300];
+
+public function handle(MarketingCloudService $marketingCloud): void
+{
+    try {
+        $marketingCloud->subscribe($subscriber);
+    } catch (MarketingCloudRejectedException $e) {
+        $this->fail($e);
+    }
+}
+```
 
 ## Data Extensions vs Subscriptions
 

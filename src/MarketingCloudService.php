@@ -194,7 +194,7 @@ class MarketingCloudService
         if ($status !== null && $status !== 'OK') {
             $message = $this->soapValue($response->body(), 'StatusMessage') ?? 'no status message';
 
-            throw new RuntimeException("Marketing Cloud SOAP {$action} failed ({$status}): {$message}");
+            throw new MarketingCloudRejectedException("Marketing Cloud SOAP {$action} failed ({$status}): {$message}");
         }
 
         return $response;

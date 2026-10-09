@@ -5,6 +5,7 @@ namespace Nlincs\MarketingCloudLaravel\Tests;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Nlincs\MarketingCloudLaravel\MarketingCloudRejectedException;
 use Nlincs\MarketingCloudLaravel\MarketingCloudService;
 use Nlincs\MarketingCloudLaravel\Subscriber;
 use RuntimeException;
@@ -192,7 +193,7 @@ class MarketingCloudServiceTest extends TestCase
             ),
         ]);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(MarketingCloudRejectedException::class);
         $this->expectExceptionMessage('Marketing Cloud SOAP Update failed (Error): List & ID invalid');
 
         $this->service()->subscribe(Subscriber::fromEmail('test@example.com'));
